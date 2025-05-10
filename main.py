@@ -81,7 +81,7 @@ def run_booking(req: BookingRequest):
                 return {
                     "status": "booking logged",
                     "gpt_args": arguments,
-                    "webhook_response": response.json()
+                    "webhook_response": response.text()
                 }
 
             else:
