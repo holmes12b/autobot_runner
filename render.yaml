@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: autobot-runner
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port 10000
+    envVars:
+      - key: OPENAI_API_KEY
+        value: YOUR_OPENAI_API_KEY_HERE
+      - key: ASSISTANT_ID
+        value: YOUR_ASSISTANT_ID_HERE
+      - key: BOOKING_WEBHOOK
+        value: https://vincecho-booking.onrender.com/log_booking
