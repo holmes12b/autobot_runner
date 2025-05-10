@@ -23,7 +23,7 @@ def run_booking(req: BookingRequest):
         # Create a new GPT thread
         thread = client.beta.threads.create()
 
-        # Add the user message
+        # Add the user's booking message
         client.beta.threads.messages.create(
             thread_id=thread.id,
             role="user",
@@ -36,7 +36,7 @@ def run_booking(req: BookingRequest):
             assistant_id=ASSISTANT_ID
         )
 
-        # Wait for assistant to finish or request a tool
+        # Wait for assistant to complete or trigger a function call
         while True:
             run_status = client.beta.threads.runs.retrieve(
                 thread_id=thread.id,
@@ -44,7 +44,7 @@ def run_booking(req: BookingRequest):
             )
 
             if run_status.status == "completed":
-                print("✅ GPT run completed with no function call.")
+                print("✅ GPT run completed — no function call made.")
                 return {"status": "completed", "note": "No function call needed."}
 
             elif run_status.status == "requires_action":
@@ -61,14 +61,20 @@ def run_booking(req: BookingRequest):
                     print("❌ JSON parsing failed:", e)
                     return {"status": "error", "message": str(e)}
 
-                # Forward to your webhook (which logs to Google Sheet)
+                # Forward the parsed data to your webhook
                 response = requests.post(
                     WEBHOOK_URL,
                     headers={"Content-Type": "application/json"},
                     json=arguments
                 )
 
-                # Confirm function completion to GPT
+                try:
+                    webhook_output = response.json()
+                except Exception as e:
+                    print("⚠️  Webhook returned non-JSON response:", e)
+                    webhook_output = response.text
+
+                # Confirm the function was handled
                 client.beta.threads.runs.submit_tool_outputs(
                     thread_id=thread.id,
                     run_id=run.id,
@@ -77,12 +83,13 @@ def run_booking(req: BookingRequest):
                         "output": "Booking logged successfully"
                     }]
                 )
-return {
-    "status": "booking logged",
-    "gpt_args": arguments,
-    "webhook_status": response.status_code,
-    "webhook_response": response.text
-}
+
+                return {
+                    "status": "booking logged",
+                    "gpt_args": arguments,
+                    "webhook_status": response.status_code,
+                    "webhook_response": webhook_output
+                }
 
             else:
                 time.sleep(1)
