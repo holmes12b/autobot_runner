@@ -77,12 +77,12 @@ def run_booking(req: BookingRequest):
                         "output": "Booking logged successfully"
                     }]
                 )
-
-                return {
-                    "status": "booking logged",
-                    "gpt_args": arguments,
-                    "webhook_response": response.text()
-                }
+return {
+    "status": "booking logged",
+    "gpt_args": arguments,
+    "webhook_status": response.status_code,
+    "webhook_response": response.text
+}
 
             else:
                 time.sleep(1)
