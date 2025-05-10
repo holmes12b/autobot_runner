@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from pydantic import BaseModel
 import json
 import time
@@ -6,12 +6,12 @@ import requests
 from openai import OpenAI
 import os
 
+# Load environment variables
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 ASSISTANT_ID = os.getenv("ASSISTANT_ID")
 WEBHOOK_URL = os.getenv("BOOKING_WEBHOOK")
 
 client = OpenAI(api_key=OPENAI_API_KEY)
-
 app = FastAPI()
 
 class BookingRequest(BaseModel):
@@ -20,60 +20,55 @@ class BookingRequest(BaseModel):
 @app.post("/run-booking")
 def run_booking(req: BookingRequest):
     try:
+        # Create a new GPT thread
         thread = client.beta.threads.create()
+
+        # Add the user message
         client.beta.threads.messages.create(
             thread_id=thread.id,
             role="user",
             content=req.message
         )
 
+        # Start the assistant run
         run = client.beta.threads.runs.create(
             thread_id=thread.id,
             assistant_id=ASSISTANT_ID
         )
 
+        # Wait for assistant to finish or request a tool
         while True:
-            run_status = client.beta.threads.runs.retrieve(thread_id=thread.id, run_id=run.id)
+            run_status = client.beta.threads.runs.retrieve(
+                thread_id=thread.id,
+                run_id=run.id
+            )
 
             if run_status.status == "completed":
+                print("✅ GPT run completed with no function call.")
                 return {"status": "completed", "note": "No function call needed."}
-elif run_status.status == "requires_action":
-    print("GPT is calling a function...")
 
-    tool_call = run_status.required_action.submit_tool_outputs.tool_calls[0]
+            elif run_status.status == "requires_action":
+                print("🤖 GPT is calling a function...")
 
-    # 🔎 Debug print
-    print("Raw GPT function arguments:")
-    print(repr(tool_call.function.arguments))  # logs exactly what GPT gave us
+                tool_call = run_status.required_action.submit_tool_outputs.tool_calls[0]
 
-    try:
-        arguments = json.loads(tool_call.function.arguments)
-    except Exception as e:
-        print("❌ JSON parsing failed:", e)
-        return {"status": "error", "message": str(e)}
+                print("🔎 Raw GPT function arguments:")
+                print(repr(tool_call.function.arguments))
 
-    # POST to your booking webhook
-    response = requests.post(
-        WEBHOOK_URL,
-        headers={"Content-Type": "application/json"},
-        json=arguments
-    )
+                try:
+                    arguments = json.loads(tool_call.function.arguments)
+                except Exception as e:
+                    print("❌ JSON parsing failed:", e)
+                    return {"status": "error", "message": str(e)}
 
-    # Confirm back to GPT
-    client.beta.threads.runs.submit_tool_outputs(
-        thread_id=thread.id,
-        run_id=run.id,
-        tool_outputs=[{
-            "tool_call_id": tool_call.id,
-            "output": "Booking logged successfully"
-        }]
-    )
-    return {
-        "status": "booking logged",
-        "gpt_args": arguments,
-        "webhook_response": response.json()
-    }
-                # Submit output back to OpenAI
+                # Forward to your webhook (which logs to Google Sheet)
+                response = requests.post(
+                    WEBHOOK_URL,
+                    headers={"Content-Type": "application/json"},
+                    json=arguments
+                )
+
+                # Confirm function completion to GPT
                 client.beta.threads.runs.submit_tool_outputs(
                     thread_id=thread.id,
                     run_id=run.id,
@@ -93,4 +88,5 @@ elif run_status.status == "requires_action":
                 time.sleep(1)
 
     except Exception as e:
+        print("❌ Error in run_booking:", e)
         return {"status": "error", "message": str(e)}
