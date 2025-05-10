@@ -37,18 +37,42 @@ def run_booking(req: BookingRequest):
 
             if run_status.status == "completed":
                 return {"status": "completed", "note": "No function call needed."}
+elif run_status.status == "requires_action":
+    print("GPT is calling a function...")
 
-            elif run_status.status == "requires_action":
-                tool_call = run_status.required_action.submit_tool_outputs.tool_calls[0]
-                arguments = json.loads(tool_call.function.arguments)
+    tool_call = run_status.required_action.submit_tool_outputs.tool_calls[0]
 
-                # Post to your Flask webhook on Render
-                response = requests.post(
-                    WEBHOOK_URL,
-                    headers={"Content-Type": "application/json"},
-                    json=arguments
-                )
+    # 🔎 Debug print
+    print("Raw GPT function arguments:")
+    print(repr(tool_call.function.arguments))  # logs exactly what GPT gave us
 
+    try:
+        arguments = json.loads(tool_call.function.arguments)
+    except Exception as e:
+        print("❌ JSON parsing failed:", e)
+        return {"status": "error", "message": str(e)}
+
+    # POST to your booking webhook
+    response = requests.post(
+        WEBHOOK_URL,
+        headers={"Content-Type": "application/json"},
+        json=arguments
+    )
+
+    # Confirm back to GPT
+    client.beta.threads.runs.submit_tool_outputs(
+        thread_id=thread.id,
+        run_id=run.id,
+        tool_outputs=[{
+            "tool_call_id": tool_call.id,
+            "output": "Booking logged successfully"
+        }]
+    )
+    return {
+        "status": "booking logged",
+        "gpt_args": arguments,
+        "webhook_response": response.json()
+    }
                 # Submit output back to OpenAI
                 client.beta.threads.runs.submit_tool_outputs(
                     thread_id=thread.id,
